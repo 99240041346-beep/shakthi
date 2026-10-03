@@ -42,6 +42,28 @@ def init_db():
     CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,action TEXT,ref TEXT,details TEXT,created_at TEXT);
     CREATE TABLE IF NOT EXISTS safety_points(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT,kind TEXT,location TEXT,description TEXT);
     """)
+    # Backward-compatible migration for databases created by earlier releases.
+    migrations = {
+        "reports": {"priority":"TEXT","summary":"TEXT","tags":"TEXT","admin_note":"TEXT","security_note":"TEXT","latitude":"REAL","longitude":"REAL","accuracy":"REAL","forwarded_at":"TEXT","resolved_at":"TEXT","updated_at":"TEXT","evidence_name":"TEXT","evidence_path":"TEXT","severity":"TEXT"},
+        "alerts": {"report_public_id":"TEXT","location_snapshot":"TEXT"},
+        "sos": {"forwarded_at":"TEXT","resolved_at":"TEXT","security_note":"TEXT"},
+        "locations": {"accuracy":"REAL"},
+        "contacts": {"description":"TEXT","active":"INTEGER DEFAULT 1"},
+        "services": {"description":"TEXT","active":"INTEGER DEFAULT 1"}
+    }
+    for table, cols in migrations.items():
+        existing = {row["name"] for row in c.execute("PRAGMA table_info(" + table + ")").fetchall()}
+        for col, typ in cols.items():
+            if col not in existing:
+                c.execute("ALTER TABLE " + table + " ADD COLUMN " + col + " " + typ)
+    report_cols = {row["name"] for row in c.execute("PRAGMA table_info(reports)").fetchall()}
+    if "ai_priority" in report_cols and "priority" in report_cols:
+        c.execute("UPDATE reports SET priority=COALESCE(NULLIF(priority,''),ai_priority)")
+    if "ai_summary" in report_cols and "summary" in report_cols:
+        c.execute("UPDATE reports SET summary=COALESCE(NULLIF(summary,''),ai_summary)")
+    if "ai_tags" in report_cols and "tags" in report_cols:
+        c.execute("UPDATE reports SET tags=COALESCE(NULLIF(tags,''),ai_tags)")
+    c.commit()
     if c.execute("SELECT COUNT(*) n FROM contacts").fetchone()["n"]==0:
         c.executemany("INSERT INTO contacts(name,kind,phone,description) VALUES(?,?,?,?)",[
           ("Campus Security","Security","+91 99999 99999","24x7 campus security"),
