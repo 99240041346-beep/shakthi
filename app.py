@@ -301,7 +301,7 @@ def track_alias():
 @auth("student")
 def track():
     if request.method=="POST": return redirect(url_for("track",public_id=request.form.get("public_id","")))
-    rid=request.args.get("public_id","").strip(); c=db(); owned_ids={x["public_id"] for x in session.get("student_reports",[])}; r=c.execute("SELECT * FROM reports WHERE public_id=?",(rid,)).fetchone() if rid and rid in owned_ids else None; msgs=c.execute("SELECT * FROM messages WHERE public_id=? ORDER BY id", (rid,)).fetchall() if r else []; c.close()
+    rid=request.args.get("public_id","").strip(); c=db(); owned_ids={x["public_id"] for x in session.get("student_reports",[])}; r=c.execute("SELECT * FROM reports WHERE public_id=? AND student_user=?",(rid,session.get("login_user",""))).fetchone() if rid else None; msgs=c.execute("SELECT * FROM messages WHERE public_id=? ORDER BY id", (rid,)).fetchall() if r else []; c.close()
     if not r: return redirect(url_for("portal",role="student"))
     else:
         submitted_cls="ok" if r["status"] in ("Submitted","Under Review","Forwarded","Security Action","Resolved") else ""
@@ -315,7 +315,7 @@ def track():
 @app.route("/student/track/<rid>/message",methods=["POST"])
 @auth("student")
 def student_message(rid):
-    c=db(); r=c.execute("SELECT * FROM reports WHERE public_id=?",(rid,)).fetchone() if rid in session.get("student_reports",[]) else None
+    c=db(); r=c.execute("SELECT * FROM reports WHERE public_id=? AND student_user=?",(rid,session.get("login_user",""))).fetchone()
     if r and request.form.get("message","").strip(): c.execute("INSERT INTO messages(public_id,sender,message,created_at) VALUES(?,?,?,?)",(rid,"student",request.form["message"].strip(),now())); c.commit()
     c.close(); return redirect(url_for("track",public_id=rid))
 
