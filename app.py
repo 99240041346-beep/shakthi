@@ -172,7 +172,35 @@ def page(title,body,role=None,active=""):
 
 @app.route("/")
 def home():
-    body=f"""<section class="hero"><div><div class="eyebrow">CAMPUS SAFETY • RESPONSE • RESOLUTION</div><h1>One campus.<br><span>One safety command.</span></h1><p>CAMPUS SHAKTHI connects students, administrators and security in one response workflow with anonymous reporting, severity classification, live location, emergency SOS, alerts, maps, evidence and resolution tracking.</p><div class="actions"><a class="btn primary" href="/student/login">Student Portal</a><a class="btn" href="/admin/login">Admin Command Center</a><a class="btn" href="/security/login">Security Portal</a></div></div><div class="threeD"><div class="orb"></div><div class="shield">🛡</div><div class="float f1">🎓 Student</div><div class="float f2">⚡ Admin</div><div class="float f3">🚓 Security</div></div></section><div class="grid g3"><div class="card"><h3>Anonymous reporting</h3><p class="muted">Submit a case, attach evidence, receive a private tracking token and communicate without exposing identity in the case workflow.</p></div><div class="card"><h3>Emergency SOS</h3><p class="muted">Student GPS is persisted with the SOS. Admin receives the emergency and the continuous alarm remains active until forwarding.</p></div><div class="card"><h3>Security resolution</h3><p class="muted">Admin forwards the exact case and location. Security takes action, records notes and marks the incident resolved.</p></div></div>"""
+    body=f"""<div class="wrap">
+<section class="hero" style="padding-top:48px">
+  <div>
+    <div class="eyebrow">KALASALINGAM UNIVERSITY • CAMPUS SAFETY</div>
+    <h1>One campus.<br><span>One safety command.</span></h1>
+    <p>CAMPUS SHAKTHI connects students, administrators and security in one clear workflow for reporting, tracking, emergency response and resolution.</p>
+    <div class="actions">
+      <a class="btn primary" href="/student/login">Student Portal</a>
+      <a class="btn" href="/admin/login">Admin Command Center</a>
+      <a class="btn" href="/security/login">Security Portal</a>
+    </div>
+  </div>
+  <div class="threeD"><div class="orb"></div><div class="shield">🛡</div><div class="float f1">🎓 Student</div><div class="float f2">⚡ Admin</div><div class="float f3">🚓 Security</div></div>
+</section>
+<div class="grid g2" style="margin:8px 0 28px">
+  <a class="card" href="/student/login" style="display:block"><span class="pill">STUDENT</span><h2>📝 Report an Incident</h2><p class="muted">Sign in to submit a report, add evidence and share your location.</p><span class="btn primary small">Open Report</span></a>
+  <a class="card" href="/student/login" style="display:block"><span class="pill">STUDENT</span><h2>🔎 Track a Case</h2><p class="muted">Sign in to open your separate case-tracking page and view your complete history.</p><span class="btn small">Open Track Case</span></a>
+</div>
+<div class="grid g3">
+  <div class="card"><h3>Anonymous reporting</h3><p class="muted">Submit a case, attach evidence, receive a private tracking token and communicate securely through the case history.</p></div>
+  <div class="card"><h3>Emergency SOS</h3><p class="muted">Student GPS is persisted with the SOS and sent to Admin for immediate response.</p></div>
+  <div class="card"><h3>Security resolution</h3><p class="muted">Admin forwards the case and location. Security records action and marks the case resolved.</p></div>
+</div>
+<div class="card" style="text-align:center;margin-top:22px;padding:28px">
+  <div class="eyebrow">SIMPLE RESPONSE FLOW</div>
+  <h2 style="margin:8px 0">Report → Track → Admin → Security → Resolved</h2>
+  <p class="muted">Every case keeps its status, messages, location and response history together.</p>
+</div>
+</div>"""
     return page("CAMPUS SHAKTHI",body)
 
 @app.route("/<role>/login",methods=["GET","POST"])
