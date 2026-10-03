@@ -234,7 +234,9 @@ def portal(role):
         for r in reports:
             if r["status"]!="Resolved":
                 fwd=f'<form method="post" action="/admin/report/{r["public_id"]}/forward"><button class="btn warn small">Forward to Security</button></form>' if r["status"] in ("Submitted","Under Review") else '<span class="pill">IN SECURITY</span>'
-                                mrows=c.execute("SELECT * FROM messages WHERE public_id=? ORDER BY id", (r["public_id"],)).fetchall()
+                                mc=db()
+                mrows=mc.execute("SELECT * FROM messages WHERE public_id=? ORDER BY id", (r["public_id"],)).fetchall()
+                mc.close()
                 msg_html="".join(f'<div class="msg {m["sender"]}"><b>{m["sender"]}</b>: {m["message"]}<br><small>{m["created_at"]}</small></div>' for m in mrows) or '<p class="muted">No anonymous messages yet.</p>'
                 analysis_action = "Review the report details and location, then forward to Security if immediate field response is required." if r["priority"] in ("High","Critical") else "Review the report and verify the details before forwarding or resolving the case."
                 analysis_html=f'<div class="card" style="margin-top:12px"><b>🧠 Report Analysis</b><p><b>Priority:</b> {r["priority"]} &nbsp; <b>Tags:</b> {r["tags"] or "General"}</p><p><b>Summary:</b> {r["summary"] or r["description"][:240]}</p><p class="muted"><b>Suggested admin action:</b> {analysis_action}</p></div>'
