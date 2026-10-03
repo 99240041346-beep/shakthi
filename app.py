@@ -7,7 +7,8 @@ from flask import Flask, request, redirect, url_for, session, jsonify, render_te
 BASE=Path(__file__).resolve().parent
 UPLOADS=BASE/"uploads"; UPLOADS.mkdir(exist_ok=True)
 app=Flask(__name__)
-app.secret_key=os.environ.get("SECRET_KEY","campus-shakthi-production-demo")
+app.secret_key=os.environ.get("SECRET_KEY",secrets.token_hex(32))
+app.config["MAX_CONTENT_LENGTH"]=10*1024*1024
 DB=os.environ.get("DATABASE_PATH",str(BASE/"campus_shakthi.db"))
 USERS={
  "student":(os.environ.get("STUDENT_USER","student"),os.environ.get("STUDENT_PASSWORD","student123")),
@@ -173,7 +174,7 @@ def portal(role):
     loc=c.execute("SELECT * FROM locations ORDER BY id DESC LIMIT 1").fetchone()
     logs=c.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 30").fetchall()
     total=c.execute("SELECT COUNT(*) n FROM reports").fetchone()["n"]
-    critical=c.execute("SELECT COUNT(*) n FROM reports WHERE ai_priority='Critical'").fetchone()["n"]
+    critical=c.execute("SELECT COUNT(*) n FROM reports WHERE priority='Critical'").fetchone()["n"]
     open_count=c.execute("SELECT COUNT(*) n FROM reports WHERE status!='Resolved'").fetchone()["n"]
     resolved=c.execute("SELECT COUNT(*) n FROM reports WHERE status='Resolved'").fetchone()["n"]
     active_sos=c.execute("SELECT COUNT(*) n FROM sos WHERE status='ACTIVE'").fetchone()["n"]
@@ -182,12 +183,12 @@ def portal(role):
     c.close()
     if role=="student":
         own=reports
-        cases="".join(f"""<div class="case"><span class="pill">{r['public_id']}</span><h3>{r['title']}</h3><p class="muted">{r['category']} · {r['priority']} priority · {r['status']}</p><p>{r['ai_summary'] or r['description'][:180]}</p><a class="btn small" href="/track?public_id={r['public_id']}&token={r['tracking_token']}">Open private tracker</a></div>""" for r in own[:8]) or '<div class="card"><p class="muted">No submitted cases yet.</p></div>'
+        cases="".join(f"""<div class="case"><span class="pill">{r['public_id']}</span><h3>{r['title']}</h3><p class="muted">{r['category']} · {r['priority']} priority · {r['status']}</p><p>{r['summary'] or r['description'][:180]}</p><a class="btn small" href="/student/track?public_id={r['public_id']}&token={r['tracking_token']}">Open private tracker</a></div>""" for r in own[:8]) or '<div class="card"><p class="muted">No submitted cases yet.</p></div>'
         alerts_html="".join(f'<div class="alert {"critical" if a["severity"]=="Critical" else ""}"><b>{a["title"]}</b><p class="muted">{a["message"]}</p></div>' for a in alerts) or '<p class="muted">No active alerts.</p>'
         contacts_html="".join(f'<div class="card"><b>{x["name"]}</b><p class="muted">{x["description"]}</p><a class="btn small" href="tel:{x["phone"]}">Call {x["phone"]}</a></div>' for x in contacts+services)
         body=f"""<div class="pagehead"><div class="eyebrow">STUDENT PORTAL</div><h1>Your Safety Dashboard</h1><p class="muted">Report safely, share location when needed, track every case and access emergency support.</p></div>
 <div class="grid g4"><div class="card stat"><span>OPEN CASES</span><strong>{open_count}</strong></div><div class="card stat"><span>RESOLVED</span><strong>{resolved}</strong></div><div class="card stat"><span>ACTIVE ALERTS</span><strong>{len(alerts)}</strong></div><div class="card stat"><span>LIVE LOCATION</span><strong>{"ON" if loc else "—"}</strong></div></div>
-<div class="grid g3"><a class="card" href="/report"><h2>📝 Report Incident</h2><p class="muted">Anonymous report + evidence + Priority.</p></a><a class="card sosbox" href="/emergency"><h2>🚨 Emergency SOS</h2><p class="muted">Send GPS to Admin and activate response.</p></a><a class="card" href="/map"><h2>🗺 Safety Map</h2><p class="muted">Campus safety points and support locations.</p></a></div>
+<div class="grid g3"><a class="card" href="/student/report"><h2>📝 Report Incident</h2><p class="muted">Anonymous report + evidence + Priority.</p></a><a class="card sosbox" href="/student/emergency"><h2>🚨 Emergency SOS</h2><p class="muted">Send GPS to Admin and activate response.</p></a><a class="card" href="/safety-map"><h2>🗺 Safety Map</h2><p class="muted">Campus safety points and support locations.</p></a></div>
 <div class="grid g2"><div><div class="card"><h2>Campus Alerts</h2>{alerts_html}</div><div class="card"><h2>My Case Tracker</h2><div class="grid g2">{cases}</div></div></div><div><div class="card"><h2>Live Location</h2><div class="mapbox">{("<div class='mapdot' style='left:50%;top:48%'></div>" if loc else "")}</div><p class="muted">{(f"Last GPS: {loc['latitude']}, {loc['longitude']} · accuracy {loc['accuracy']}m" if loc else "Location not shared yet.")}</p><button class="btn primary" onclick="shareLocation()">Share / Refresh My Location</button><span id="locmsg" class="muted"></span></div><div class="card"><h2>Emergency Contacts & Services</h2>{contacts_html}</div></div></div>
 <script>function shareLocation(){{if(!navigator.geolocation){{locmsg.textContent='Geolocation unavailable';return}}navigator.geolocation.getCurrentPosition(async p=>{{let r=await fetch('/student/location',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:p.coords.accuracy}})}});let j=await r.json();locmsg.textContent=j.ok?' Location shared ✓':' '+j.error}},()=>locmsg.textContent=' Location permission denied')}}</script>"""
         return page("Student Safety Dashboard",body,role,"Dashboard")
@@ -204,7 +205,7 @@ def portal(role):
                 report_cards+=f'<div class="case"><span class="pill">{r["public_id"]}</span><h3>{r["title"]}</h3><p class="muted">{r["category"]} · <b>{r["priority"]}</b> · {r["status"]}</p><p>{r["description"][:280]}</p><p class="muted">GPS: {r["latitude"]}, {r["longitude"]}</p><a class="btn small" target="_blank" href="https://www.google.com/maps?q={r["latitude"]},{r["longitude"]}">Map</a> {fwd}<form method="post" action="/admin/report/{r["public_id"]}/status" style="display:inline"><input type="hidden" name="status" value="Under Review"><button class="btn small">Review</button></form></div>'
         bars="".join(f'<div style="display:grid;grid-template-columns:140px 1fr 30px;gap:8px;align-items:center;font-size:11px"><span>{x["category"]}</span><div style="height:9px;background:#e9eef5;border-radius:9px"><div style="width:{min(100,int(x["n"])*20)}%;height:9px;background:linear-gradient(90deg,#1769e0,#15b8c9);border-radius:9px"></div></div><b>{x["n"]}</b></div>' for x in cats) or '<p class="muted">No data yet.</p>'
         alarm=f"""<div id="alarm" class="card alarm {"":"hidden" if active_sos==0 else ""}"><h2>🔊 ACTIVE SOS ALARM</h2><p>Continuous Admin alarm. It stops only after the active SOS is forwarded to Security.</p><button class="btn danger" onclick="enableAlarm()">Enable Alarm Sound</button></div>"""
-        contacts_html="".join(f'<div class="case"><b>{x["name"]}</b><p class="muted">{x["kind"]} · {x["phone"]}</p><form method="post" action="/admin/contact"><input type="hidden" name="name" value="{x["name"]}"><input type="hidden" name="kind" value="{x["kind"]}"><input type="hidden" name="phone" value="{x["phone"]}"><button class="btn small">Keep Active</button></form></div>' for x in contacts)
+        contacts_html="".join(f'<div class="case"><b>{x["name"]}</b><p class="muted">{x["kind"]} · {x["phone"]}</p><span class="pill">ACTIVE</span></div>' for x in contacts)
         body=f"""<div class="pagehead"><div class="eyebrow">ADMIN COMMAND CENTER</div><h1>Campus Safety Control Room</h1><p class="muted">Monitor incidents, severity, SOS events, live location, alerts, security forwarding, contacts and audit history.</p></div>
 <div class="grid g4"><div class="card stat"><span>TOTAL REPORTS</span><strong>{total}</strong></div><div class="card stat"><span>CRITICAL</span><strong class="critical">{critical}</strong></div><div class="card stat"><span>OPEN</span><strong>{open_count}</strong></div><div class="card stat"><span>RESOLVED</span><strong class="ok">{resolved}</strong></div></div>
 {alarm}
@@ -226,6 +227,11 @@ def portal(role):
 <div class="card"><h2>📍 Campus Safety Points</h2><div class="grid g3">{"".join(f'<div class="case"><b>{p["name"]}</b><p class="muted">{p["kind"]} · {p["location"]}</p><p>{p["description"]}</p></div>' for p in points)}</div></div>"""
     return page("Security Operations",body,role,"Security Dashboard")
 
+@app.route("/report",methods=["GET","POST"])
+@auth("student")
+def report_alias():
+    return report()
+
 @app.route("/student/report",methods=["GET","POST"])
 @auth("student")
 def report():
@@ -239,10 +245,15 @@ def report():
         if ev and ev.filename:
             safe=secrets.token_hex(5)+"_"+Path(ev.filename).name; ev.save(UPLOADS/safe); en=ev.filename; ep=safe
         c=db(); c.execute("""INSERT INTO reports(public_id,tracking_token,category,title,description,location,incident_date,severity,priority,summary,tags,evidence_name,evidence_path,status,latitude,longitude,accuracy,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(rid,token,cat,title,desc,request.form.get("location",""),request.form.get("incident_date",""),request.form.get("severity","Medium"),priority,summary,tags,en,ep,"Submitted",lat,lng,acc,now(),now())); c.commit(); c.close(); audit("Report submitted",rid,"Anonymous report with severity classification: "+priority)
-        body=f"""<div class="pagehead"><div class="eyebrow">REPORT RECEIVED</div><h1>Your case is created.</h1></div><div class="card"><h2>{rid}</h2><p class="muted">Keep these details private. They are required to reopen your case tracker.</p><div class="grid g2"><div class="card"><span class="pill">TRACKING ID</span><h2>{rid}</h2></div><div class="card"><span class="pill">PRIVATE TOKEN</span><h2 style="word-break:break-all">{token}</h2></div></div><p>Priority: <b>{priority}</b> · tags: {tags}</p><a class="btn primary" href="/track?public_id={rid}&token={token}">Open Private Tracker</a></div>"""
+        body=f"""<div class="pagehead"><div class="eyebrow">REPORT RECEIVED</div><h1>Your case is created.</h1></div><div class="card"><h2>{rid}</h2><p class="muted">Keep these details private. They are required to reopen your case tracker.</p><div class="grid g2"><div class="card"><span class="pill">TRACKING ID</span><h2>{rid}</h2></div><div class="card"><span class="pill">PRIVATE TOKEN</span><h2 style="word-break:break-all">{token}</h2></div></div><p>Priority: <b>{priority}</b> · tags: {tags}</p><a class="btn primary" href="/student/track?public_id={rid}&token={token}">Open Private Tracker</a></div>"""
         return page("Report Submitted",body,"student","Report Incident")
     body=f"""<div class="pagehead"><div class="eyebrow">ANONYMOUS REPORTING</div><h1>Report an Incident</h1><p class="muted">Your identity is not shown in the incident workflow. Include accurate details and location only when useful for response.</p></div><div class="card"><form class="form" method="post" enctype="multipart/form-data"><div class="grid g2"><label>Category<select name="category">{"".join(f"<option>{x}</option>" for x in CATEGORIES)}</select></label><label>Severity<select name="severity">{"".join(f"<option>{x}</option>" for x in SEVERITIES)}</select></label></div><label>Incident title<input name="title" placeholder="Short description" required></label><label>What happened?<textarea name="description" required></textarea></label><div class="grid g2"><label>Location<input name="location" placeholder="Block / hostel / area"></label><label>Date / time<input type="datetime-local" name="incident_date"></label></div><label>Evidence (optional)<input type="file" name="evidence"></label><input type="hidden" name="latitude" id="lat"><input type="hidden" name="longitude" id="lng"><input type="hidden" name="accuracy" id="acc"><button class="btn primary">Submit Secure Report</button></form></div><script>navigator.geolocation?.getCurrentPosition(p=>{{lat.value=p.coords.latitude;lng.value=p.coords.longitude;acc.value=p.coords.accuracy}})</script>"""
     return page("Report Incident",body,"student","Report Incident")
+
+@app.route("/track",methods=["GET","POST"])
+@auth("student")
+def track_alias():
+    return track()
 
 @app.route("/student/track",methods=["GET","POST"])
 @auth("student")
@@ -261,11 +272,16 @@ def student_message(rid):
     if r and request.form.get("message","").strip(): c.execute("INSERT INTO messages(public_id,sender,message,created_at) VALUES(?,?,?,?)",(rid,"student",request.form["message"].strip(),now())); c.commit()
     c.close(); return redirect(url_for("track",public_id=rid,token=request.form.get("token")))
 
+@app.route("/emergency")
+@auth("student")
+def emergency_alias():
+    return emergency()
+
 @app.route("/student/emergency")
 @auth("student")
 def emergency():
     c=db(); contacts=c.execute("SELECT * FROM contacts WHERE active=1").fetchall(); c.close()
-    body=f"""<div class="pagehead"><div class="eyebrow">EMERGENCY RESPONSE</div><h1>Emergency SOS</h1><p class="muted">Press once to capture GPS and create an ACTIVE emergency event. Admin receives it immediately.</p></div><div class="card sosbox" style="text-align:center"><button class="sosbtn" onclick="sos()">SOS</button><p id="smsg" class="muted"></p></div><div class="grid g3">{"".join(f'<div class="card"><h3>{x["name"]}</h3><p class="muted">{x["description"]}</p><a class="btn small" href="tel:{x["phone"]}">Call {x["phone"]}</a></div>' for x in contacts)}</div><script>async function sos(){{if(!navigator.geolocation){{smsg.textContent="GPS unavailable";return}}navigator.geolocation.getCurrentPosition(async p=>{{let r=await fetch('/student/sos',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{latitude:p.coords.latitude,longitude:p.coords.longitude}})}});let j=await r.json();smsg.textContent=j.message||j.error}},()=>smsg.textContent="Location permission is required")}}</script>"""
+    body=f"""<div class="pagehead"><div class="eyebrow">EMERGENCY RESPONSE</div><h1>Emergency SOS</h1><p class="muted">Press once to capture GPS and create an ACTIVE emergency event. Admin receives it immediately. Keep this page open until help is confirmed.</p></div><div class="card sosbox" style="text-align:center"><button class="sosbtn" onclick="sos()">SOS</button><p id="smsg" class="muted"></p></div><div class="grid g3">{"".join(f'<div class="card"><h3>{x["name"]}</h3><p class="muted">{x["description"]}</p><a class="btn small" href="tel:{x["phone"]}">Call {x["phone"]}</a></div>' for x in contacts)}</div><script>async function sos(){{if(!navigator.geolocation){{smsg.textContent="GPS unavailable";return}}navigator.geolocation.getCurrentPosition(async p=>{{let r=await fetch('/student/sos',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{latitude:p.coords.latitude,longitude:p.coords.longitude}})}});let j=await r.json();smsg.textContent=j.message||j.error}},()=>smsg.textContent="Location permission is required")}}</script>"""
     return page("Emergency SOS",body,"student","Emergency SOS")
 
 @app.route("/student/sos",methods=["POST"])
@@ -274,7 +290,7 @@ def create_sos():
     d=request.get_json(silent=True) or {}
     try: lat=float(d["latitude"]); lng=float(d["longitude"])
     except: return jsonify(ok=False,error="Valid GPS coordinates are required"),400
-    eid="SOS-"+secrets.token_hex(4).upper(); c=db(); c.execute("INSERT INTO sos(event_id,latitude,longitude,created_at) VALUES(?,?,?,?)",(eid,lat,lng,now())); c.execute("INSERT INTO locations(student_label,latitude,longitude,accuracy,created_at) VALUES(?,?,?,?,?)",("Anonymous Student",lat,lng,0,now())); c.commit(); c.close(); audit("SOS triggered",eid,f"GPS {lat},{lng}"); return jsonify(ok=True,event_id=eid,message=f"SOS {eid} sent to Admin with GPS location.")
+    eid="SOS-"+secrets.token_hex(4).upper(); c=db(); c.execute("INSERT INTO sos(event_id,latitude,longitude,created_at) VALUES(?,?,?,?)",(eid,lat,lng,now())); c.execute("INSERT INTO locations(student_label,latitude,longitude,accuracy,created_at) VALUES(?,?,?,?,?)",("Anonymous Student",lat,lng,0,now())); c.commit(); c.close(); audit("SOS triggered",eid,f"GPS {lat},{lng}"); return jsonify(ok=True,event_id=eid,message=f"SOS {eid} sent to Admin with GPS location. Keep this page open and contact campus emergency services if you are in immediate danger.")
 
 @app.route("/student/location",methods=["POST"])
 @auth("student")
@@ -333,6 +349,10 @@ def add_alert():
 @auth("admin")
 def add_contact():
     c=db(); c.execute("INSERT INTO contacts(name,kind,phone,description) VALUES(?,?,?,?)",(request.form["name"],request.form["kind"],request.form["phone"],request.form.get("description",""))); c.commit(); c.close(); return redirect(url_for("portal",role="admin"))
+
+@app.route("/map")
+def safety_map_alias():
+    return safety_map()
 
 @app.route("/safety-map")
 def safety_map():
