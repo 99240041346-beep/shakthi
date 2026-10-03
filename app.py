@@ -234,7 +234,7 @@ def portal(role):
         for r in reports:
             if r["status"]!="Resolved":
                 fwd=f'<form method="post" action="/admin/report/{r["public_id"]}/forward"><button class="btn warn small">Forward to Security</button></form>' if r["status"] in ("Submitted","Under Review") else '<span class="pill">IN SECURITY</span>'
-                                mc=db()
+                mc=db()
                 mrows=mc.execute("SELECT * FROM messages WHERE public_id=? ORDER BY id", (r["public_id"],)).fetchall()
                 mc.close()
                 msg_html="".join(f'<div class="msg {m["sender"]}"><b>{m["sender"]}</b>: {m["message"]}<br><small>{m["created_at"]}</small></div>' for m in mrows) or '<p class="muted">No anonymous messages yet.</p>'
