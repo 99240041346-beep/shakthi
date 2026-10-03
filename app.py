@@ -44,7 +44,7 @@ def init_db():
     """)
     # Backward-compatible migration for databases created by earlier releases.
     migrations = {
-        "reports": {"priority":"TEXT","summary":"TEXT","tags":"TEXT","admin_note":"TEXT","security_note":"TEXT","latitude":"REAL","longitude":"REAL","accuracy":"REAL","forwarded_at":"TEXT","resolved_at":"TEXT","updated_at":"TEXT","evidence_name":"TEXT","evidence_path":"TEXT","severity":"TEXT"},
+        "reports": {"student_user":"TEXT","priority":"TEXT","summary":"TEXT","tags":"TEXT","admin_note":"TEXT","security_note":"TEXT","latitude":"REAL","longitude":"REAL","accuracy":"REAL","forwarded_at":"TEXT","resolved_at":"TEXT","updated_at":"TEXT","evidence_name":"TEXT","evidence_path":"TEXT","severity":"TEXT"},
         "alerts": {"report_public_id":"TEXT","location_snapshot":"TEXT"},
         "sos": {"forwarded_at":"TEXT","resolved_at":"TEXT","security_note":"TEXT"},
         "locations": {"accuracy":"REAL"},
@@ -181,7 +181,7 @@ def login(role):
     msg=""
     if request.method=="POST":
         if (request.form.get("username"),request.form.get("password"))==USERS[role]:
-            session.clear(); session[role]=True; return redirect(url_for("portal",role=role))
+            session.clear(); session[role]=True; session["login_user"]=request.form.get("username",""); return redirect(url_for("portal",role=role))
         msg='<div class="alert critical">Invalid credentials.</div>'
     body=f"""<div class="login"><div class="card"><div class="eyebrow">{role.upper()} ACCESS</div><h1>{role.title()} Login</h1>{msg}<form class="form" method="post"><label>Username<input name="username" required></label><label>Password<input name="password" type="password" required></label><button class="btn primary">Sign in</button></form><p class="muted">Demo: <b>{USERS[role][0]}</b> / <b>{USERS[role][1]}</b></p></div></div>"""
     return page(role.title()+" Login",body)
@@ -213,8 +213,8 @@ def portal(role):
     cats=c.execute("SELECT category,COUNT(*) n FROM reports GROUP BY category ORDER BY n DESC").fetchall()
     c.close()
     if role=="student":
-        owned_ids=session.get("student_reports",[])
-        own=[r for r in reports if r["public_id"] in owned_ids]
+        student_user=session.get("login_user","")
+        own=c.execute("SELECT * FROM reports WHERE student_user=? ORDER BY id DESC LIMIT 50",(student_user,)).fetchall()
         cases="".join(f"""<div class="case"><span class="pill">{r['public_id']}</span><h3>{r['title']}</h3><p class="muted">{r['category']} · {r['priority']} priority · <b>{r['status']}</b></p><p>{r['summary'] or r['description'][:180]}</p><div class="actions"><a class="btn primary small" href="/student/track?public_id={r['public_id']}">View Case History</a><a class="btn small" target="_blank" href="https://www.google.com/maps?q={r['latitude']},{r['longitude']}">Location</a></div></div>""" for r in own[:12]) or '<div class="card"><p class="muted">No submitted cases yet. Your submitted reports will automatically appear here.</p></div>'
         alerts_html="".join(f'<div class="alert {"critical" if a["severity"]=="Critical" else ""}"><b>{a["title"]}</b><p class="muted">{a["message"]}</p></div>' for a in alerts) or '<p class="muted">No active alerts.</p>'
         contacts_html="".join(f'<div class="card"><b>{x["name"]}</b><p class="muted">{x["description"]}</p><a class="btn small" href="tel:{x["phone"]}">Call {x["phone"]}</a></div>' for x in contacts+services)
@@ -283,7 +283,7 @@ def report():
         rid="CS-"+secrets.token_hex(4).upper(); token=secrets.token_urlsafe(18); ev=request.files.get("evidence"); en=""; ep=""
         if ev and ev.filename:
             safe=secrets.token_hex(5)+"_"+Path(ev.filename).name; ev.save(UPLOADS/safe); en=ev.filename; ep=safe
-        c=db(); c.execute("""INSERT INTO reports(public_id,tracking_token,category,title,description,location,incident_date,severity,priority,summary,tags,evidence_name,evidence_path,status,latitude,longitude,accuracy,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(rid,token,cat,title,desc,request.form.get("location",""),request.form.get("incident_date",""),request.form.get("severity","Medium"),priority,summary,tags,en,ep,"Submitted",lat,lng,acc,now(),now())); c.commit(); c.close(); audit("Report submitted",rid,"Anonymous report with severity classification: "+priority)
+        c=db(); c.execute("""INSERT INTO reports(public_id,tracking_token,student_user,category,title,description,location,incident_date,severity,priority,summary,tags,evidence_name,evidence_path,status,latitude,longitude,accuracy,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(rid,token,session.get("login_user","student"),cat,title,desc,request.form.get("location",""),request.form.get("incident_date",""),request.form.get("severity","Medium"),priority,summary,tags,en,ep,"Submitted",lat,lng,acc,now(),now())); c.execute("INSERT INTO messages(public_id,sender,message,created_at) VALUES(?,?,?,?)",(rid,"system","Report submitted and added to your case history.",now())); c.commit(); c.close(); audit("Report submitted",rid,"Anonymous report with severity classification: "+priority)
         student_reports=session.get("student_reports",[])
         if rid not in student_reports: student_reports.append(rid)
         session["student_reports"]=student_reports[-50:]
@@ -366,7 +366,7 @@ def forward_sos(eid):
 def forward_report(rid):
     c=db(); r=c.execute("SELECT * FROM reports WHERE public_id=?",(rid,)).fetchone()
     if not r: c.close(); return "Not found",404
-    c.execute("UPDATE reports SET status='Forwarded',forwarded_at=?,updated_at=? WHERE public_id=? AND status!='Resolved'",(now(),now(),rid))
+    c.execute("UPDATE reports SET status='Forwarded',forwarded_at=?,updated_at=? WHERE public_id=? AND status!='Resolved'",(now(),now(),rid)); c.execute("INSERT INTO messages(public_id,sender,message,created_at) VALUES(?,?,?,?)",(rid,"admin","Admin forwarded this case to Security with the recorded location.",now()))
     c.execute("INSERT INTO alerts(title,message,severity,audience,created_at,report_public_id,location_snapshot) VALUES(?,?,?,?,?,?,?)",(f"Security Action Required • {rid}",r["title"],"Critical" if r["priority"]=="Critical" else "Warning","security",now(),rid,json.dumps({"latitude":r["latitude"],"longitude":r["longitude"]})))
     c.commit(); c.close(); audit("Report forwarded to Security",rid,"Location snapshot included"); return redirect(url_for("portal",role="admin"))
 
@@ -375,7 +375,8 @@ def forward_report(rid):
 def admin_status(rid):
     status=request.form.get("status","Under Review")
     if status not in STATUSES: return "Bad status",400
-    c=db(); c.execute("UPDATE reports SET status=?,admin_note=?,updated_at=? WHERE public_id=?",(status,request.form.get("note",""),now(),rid)); c.commit(); c.close(); audit("Admin status update",rid,status); return redirect(url_for("portal",role="admin"))
+    c=db(); note=request.form.get("note","").strip()
+    c.execute("UPDATE reports SET status=?,admin_note=?,updated_at=? WHERE public_id=?",(status,note,now(),rid)); c.execute("INSERT INTO messages(public_id,sender,message,created_at) VALUES(?,?,?,?)",(rid,"admin",f"Admin updated case status to {status}."+(" Note: "+note if note else ""),now())); c.commit(); c.close(); audit("Admin status update",rid,status); return redirect(url_for("portal",role="admin"))
 
 @app.route("/security/sos/<eid>/resolve",methods=["POST"])
 @auth("security")
@@ -385,7 +386,8 @@ def resolve_sos(eid):
 @app.route("/security/report/<rid>/resolve",methods=["POST"])
 @auth("security")
 def resolve_report(rid):
-    c=db(); c.execute("UPDATE reports SET status='Resolved',security_note=?,resolved_at=?,updated_at=? WHERE public_id=? AND status IN ('Forwarded','Security Action')",(request.form.get("note",""),now(),now(),rid)); c.commit(); c.close(); audit("Report resolved",rid,request.form.get("note","")); return redirect(url_for("portal",role="security"))
+    c=db(); note=request.form.get("note","").strip()
+    c.execute("UPDATE reports SET status='Resolved',security_note=?,resolved_at=?,updated_at=? WHERE public_id=? AND status IN ('Forwarded','Security Action')",(note,now(),now(),rid)); c.execute("INSERT INTO messages(public_id,sender,message,created_at) VALUES(?,?,?,?)",(rid,"security",f"Security marked the case Resolved."+(" Note: "+note if note else ""),now())); c.commit(); c.close(); audit("Report resolved",rid,request.form.get("note","")); return redirect(url_for("portal",role="security"))
 
 @app.route("/admin/alert",methods=["POST"])
 @auth("admin")
