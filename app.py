@@ -61,8 +61,8 @@ def home():
 @app.route("/<role>/login",methods=["GET","POST"])
 def login(role):
     if role not in ("student","admin","security"): return "Not found",404
+    creds={"student":STUDENT,"admin":ADMIN,"security":SECURITY}[role]
     if request.method=="POST":
-        creds={"student":STUDENT,"admin":ADMIN,"security":SECURITY}[role]
         if (request.form.get("username"),request.form.get("password"))==creds:
             session.clear(); session[role]=True; return redirect(url_for("portal",role=role))
         msg='<p style="color:#d7263d">Invalid credentials.</p>'
