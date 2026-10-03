@@ -158,6 +158,11 @@ def page(title,body,role=None,active=""):
         nav='<div class="side"><div class="brand">CAMPUS <span>SHAKTHI</span></div><div class="navtitle">NAVIGATION</div>'
         for label,route,arg in items:
             href=url_for(route,role=arg) if arg else url_for(route)
+            anchors={
+"Incident Queue":"incident-queue","SOS Control":"sos-control","Live Map":"live-map",
+"Alerts":"alerts","Contacts & Services":"contacts","Audit Logs":"audit",
+"Forwarded Cases":"forwarded-cases","SOS Response":"sos-response","Live Location":"live-location","Safety Points":"safety-points"}
+            if label in anchors: href += "#" + anchors[label]
             nav+=f'<a class="nav {"active" if active==label else ""}" href="{href}">{label}</a>'
         nav+=f'<div class="navtitle">ACCOUNT</div><a class="nav" href="{url_for("logout",role=role)}">Logout</a></div>'
     return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} · CAMPUS SHAKTHI</title><style>{CSS}</style></head><body><div class="shell">{nav}<div class="main"><div class="top"><div><b>{title}</b><small>Kalasalingam University Campus Safety Platform</small></div><div><span class="pill">● SYSTEM ONLINE</span></div></div><div class="wrap">{body}</div><div class="footer">CAMPUS SHAKTHI · Student Safety · Admin Response · Security Resolution</div></div></div></body></html>"""
