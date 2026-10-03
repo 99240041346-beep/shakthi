@@ -301,15 +301,28 @@ def track_alias():
 @auth("student")
 def track():
     if request.method=="POST": return redirect(url_for("track",public_id=request.form.get("public_id","")))
-    rid=request.args.get("public_id","").strip(); c=db(); r=c.execute("SELECT * FROM reports WHERE public_id=? AND student_user=?",(rid,session.get("login_user",""))).fetchone() if rid else None; msgs=c.execute("SELECT * FROM messages WHERE public_id=? ORDER BY id", (rid,)).fetchall() if r else []; c.close()
-    if not r: return redirect(url_for("portal",role="student"))
-    else:
-        submitted_cls="ok" if r["status"] in ("Submitted","Under Review","Forwarded","Security Action","Resolved") else ""
-        review_cls="ok" if r["status"] in ("Under Review","Forwarded","Security Action","Resolved") else ""
-        security_cls="ok" if r["status"] in ("Forwarded","Security Action","Resolved") else ""
-        resolved_cls="ok" if r["status"]=="Resolved" else ""
-        token=r["tracking_token"]
-        body=f"""<div class="pagehead"><div class="eyebrow">CASE HISTORY · {r['public_id']}</div><h1>{r['title']}</h1><p class="muted">{r['category']} · Priority {r['priority']}</p></div><div class="timeline"><div class="card {submitted_cls}">1 · Submitted</div><div class="card {review_cls}">2 · Review</div><div class="card {security_cls}">3 · Security</div><div class="card {resolved_cls}">4 · Resolved</div></div><div class="grid g2"><div class="card"><h2>Status: {r['status']}</h2><p>{r['summary']}</p><p class="muted">Location: {r['location'] or "Not specified"} · GPS {r['latitude']}, {r['longitude']}</p><p class="muted">Admin note: {r['admin_note'] or "No update yet."}</p><p class="muted">Security note: {r['security_note'] or "No security action yet."}</p></div><div class="card"><h2>Anonymous Conversation</h2><div class="chat">{"".join(f'<div class="msg {m["sender"]}"><b>{m["sender"]}</b><br>{m["message"]}<br><small>{m["created_at"]}</small></div>' for m in msgs) or '<p class="muted">No messages.</p>'}</div><form class="form" method="post" action="/student/track/{r["public_id"]}/message"><input type="hidden" name="token" value="{token}"><input name="message" placeholder="Send a private message"><button class="btn">Send</button></form></div></div>"""
+    rid=request.args.get("public_id","").strip(); student_user=session.get("login_user",""); c=db()
+    if not rid:
+        own=c.execute("SELECT * FROM reports WHERE student_user=? ORDER BY id DESC LIMIT 50",(student_user,)).fetchall()
+        history=[]
+        for case in own:
+            msgs=c.execute("SELECT * FROM messages WHERE public_id=? ORDER BY id",(case["public_id"],)).fetchall()
+            history.append((case,msgs))
+        c.close()
+        cards=""
+        for case,msgs in history:
+            latest=msgs[-1]["message"] if msgs else "No history updates yet."
+            cards+=f"""<div class="case"><div class="kpi"><span class="pill">{case["public_id"]}</span><b>{case["status"]}</b></div><h3>{case["title"]}</h3><p class="muted">{case["category"]} · {case["priority"]} priority · Submitted {case["created_at"]}</p><p>{case["summary"] or case["description"][:180]}</p><div class="card" style="margin:10px 0;background:#f7fbff"><b>Latest history update</b><p class="muted">{latest}</p></div><div class="case-actions"><a class="btn primary small" href="/student/track?public_id={case["public_id"]}">Open Full History</a><a class="btn small" target="_blank" href="https://www.google.com/maps?q={case["latitude"]},{case["longitude"]}">Location</a></div></div>"""
+        body=f"""<div class="pagehead"><div class="eyebrow">TRACK CASE · HISTORY</div><h1>My Case History</h1><p class="muted">Every report submitted from this student account stays here. Open any case to see student messages, Admin updates, Security actions and the final resolution in chronological order.</p></div><div class="card"><h2>All My Cases</h2><div class="grid g2">{cards or '<p class="muted">No submitted cases yet. Submit a report and it will automatically appear here.</p>'}</div></div>"""
+        return page("My Case History",body,"student","Track Case")
+    c=db(); r=c.execute("SELECT * FROM reports WHERE public_id=? AND student_user=?",(rid,student_user)).fetchone(); msgs=c.execute("SELECT * FROM messages WHERE public_id=? ORDER BY id",(rid,)).fetchall() if r else []; c.close()
+    if not r: return redirect(url_for("track"))
+    submitted_cls="ok" if r["status"] in ("Submitted","Under Review","Forwarded","Security Action","Resolved") else ""
+    review_cls="ok" if r["status"] in ("Under Review","Forwarded","Security Action","Resolved") else ""
+    security_cls="ok" if r["status"] in ("Forwarded","Security Action","Resolved") else ""
+    resolved_cls="ok" if r["status"]=="Resolved" else ""
+    token=r["tracking_token"]
+    body=f"""<div class="pagehead"><div class="eyebrow">CASE HISTORY · {r['public_id']}</div><h1>{r['title']}</h1><p class="muted">{r['category']} · Priority {r['priority']}</p></div><div class="timeline"><div class="card {submitted_cls}">1 · Submitted</div><div class="card {review_cls}">2 · Review</div><div class="card {security_cls}">3 · Security</div><div class="card {resolved_cls}">4 · Resolved</div></div><div class="grid g2"><div class="card"><h2>Status: {r['status']}</h2><p>{r['summary']}</p><p class="muted">Location: {r['location'] or "Not specified"} · GPS {r['latitude']}, {r['longitude']}</p><p class="muted">Admin note: {r['admin_note'] or "No update yet."}</p><p class="muted">Security note: {r['security_note'] or "No security action yet."}</p><a class="btn small" href="/student/track">← Back to My Case History</a></div><div class="card"><h2>Case History & Messages</h2><div class="chat">{"".join(f'<div class="msg {m["sender"]}"><b>{m["sender"]}</b><br>{m["message"]}<br><small>{m["created_at"]}</small></div>' for m in msgs) or '<p class="muted">No messages.</p>'}</div><form class="form" method="post" action="/student/track/{r["public_id"]}/message"><input type="hidden" name="token" value="{token}"><input name="message" placeholder="Send a private message to Admin"><button class="btn">Send Message</button></form></div></div>"""
     return page("Case Tracker",body,"student","Track Case")
 
 @app.route("/student/track/<rid>/message",methods=["POST"])
