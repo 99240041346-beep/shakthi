@@ -185,7 +185,8 @@ def login(role):
 
 @app.route("/<role>/logout")
 def logout(role):
-    session.pop(role,None); return redirect(url_for("login",role=role))
+    session.clear()
+    return redirect(url_for("home"))
 
 @app.route("/portal/<role>")
 def portal(role):
