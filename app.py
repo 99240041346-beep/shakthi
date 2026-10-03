@@ -211,10 +211,10 @@ def portal(role):
     active_sos=c.execute("SELECT COUNT(*) n FROM sos WHERE status='ACTIVE'").fetchone()["n"]
     forwarded=c.execute("SELECT COUNT(*) n FROM reports WHERE status IN ('Forwarded','Security Action')").fetchone()["n"]
     cats=c.execute("SELECT category,COUNT(*) n FROM reports GROUP BY category ORDER BY n DESC").fetchall()
-    c.close()
     if role=="student":
         student_user=session.get("login_user","")
         own=c.execute("SELECT * FROM reports WHERE student_user=? ORDER BY id DESC LIMIT 50",(student_user,)).fetchall()
+        c.close()
         cases="".join(f"""<div class="case"><span class="pill">{r['public_id']}</span><h3>{r['title']}</h3><p class="muted">{r['category']} · {r['priority']} priority · <b>{r['status']}</b></p><p>{r['summary'] or r['description'][:180]}</p><div class="actions"><a class="btn primary small" href="/student/track?public_id={r['public_id']}">View Case History</a><a class="btn small" target="_blank" href="https://www.google.com/maps?q={r['latitude']},{r['longitude']}">Location</a></div></div>""" for r in own[:12]) or '<div class="card"><p class="muted">No submitted cases yet. Your submitted reports will automatically appear here.</p></div>'
         alerts_html="".join(f'<div class="alert {"critical" if a["severity"]=="Critical" else ""}"><b>{a["title"]}</b><p class="muted">{a["message"]}</p></div>' for a in alerts) or '<p class="muted">No active alerts.</p>'
         contacts_html="".join(f'<div class="card"><b>{x["name"]}</b><p class="muted">{x["description"]}</p><a class="btn small" href="tel:{x["phone"]}">Call {x["phone"]}</a></div>' for x in contacts+services)
